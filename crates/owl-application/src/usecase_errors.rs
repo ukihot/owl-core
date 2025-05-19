@@ -6,4 +6,6 @@ pub enum UsecaseError {
     ConfigReadError(#[source] std::io::Error),
     #[error("設定ファイルのパースに失敗: {0}")]
     ConfigParseError(#[source] toml::de::Error),
+    #[error("ファイアウォール設定に失敗: {0}")]
+    FirewallSetupFailed(#[source] anyhow::Error),
 }
