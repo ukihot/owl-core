@@ -1,7 +1,11 @@
 use crate::UsecaseError;
 use crate::output_ports::init_firewall_output::InitFirewallOutput;
-use anyhow::anyhow;
+use crate::usecase_errors::InitFirewallError;
+
 use owl_infra::OwlConfig;
+use std::fs::read_to_string;
+use std::process::Stdio;
+use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
 pub struct InitFirewallInteractor<'a, P>
@@ -11,9 +15,6 @@ where
     presenter: &'a mut P,
 }
 
-#[cfg(target_os = "windows")]
-const RULE_NAME: &str = "OwlWireGuard";
-
 impl<'a, P> InitFirewallInteractor<'a, P>
 where
     P: InitFirewallOutput + Send + 'a + ?Sized,
@@ -22,109 +23,91 @@ where
         Self { presenter }
     }
 
-    pub async fn execute(&mut self, conf: &OwlConfig) -> Result<(), UsecaseError> {
-        #[cfg(target_os = "linux")]
-        {
-            self.setup_linux(conf).await?;
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            self.setup_windows(conf).await?;
-        }
-
-        // macOS は PF による明示ルール不要（WireGuard kernel ext / utun）
-        #[cfg(target_os = "macos")]
-        {
-            // 何もしない
-        }
-
-        self.presenter.on_success();
-        Ok(())
-    }
-
-    // ───────────────────────────────────────────────
-    #[cfg(target_os = "linux")]
-    async fn setup_linux(&self, conf: &OwlConfig) -> Result<(), UsecaseError> {
-        // nftables スクリプトを組み立て
-        let script = format!(
-            "table inet owl {{
-                chain input {{
-                    type filter hook input priority 0;
-                    ct state established,related accept
-                    iifname \"wg0\" accept
-                    tcp dport {{ 22 }} accept   # SSH
-                    tcp dport {{ {} }} accept   # WireGuard handshake
-                    counter drop
-                }}
-            }}",
-            conf.interface.listen_port
-        );
-
-        let mut child = Command::new("nft")
-            .arg("-f")
-            .stdin(Stdio::piped())
-            .spawn()
-            .map_err(|e| UsecaseError::FirewallSetupFailed(e.into()))?;
-
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(script.as_bytes()).await.ok();
-        }
-
-        let status = child.wait().await.map_err(|e| {
-            UsecaseError::FirewallSetupFailed(format!("nft exec error: {e}").into())
-        })?;
-
-        if !status.success() {
-            return Err(UsecaseError::FirewallSetupFailed(anyhow::anyhow!(
-                "nft returned non‑zero"
-            )));
-        }
-        Ok(())
-    }
-
-    // ───────────────────────────────────────────────
-    #[cfg(target_os = "windows")]
-    async fn setup_windows(&self, conf: &OwlConfig) -> Result<(), UsecaseError> {
-        let port = conf.interface.listen_port;
-
-        // 冪等チェック
-        let show = Command::new("netsh")
-            .args([
-                "advfirewall",
-                "firewall",
-                "show",
-                "rule",
-                &format!("name={}", RULE_NAME),
-            ])
-            .status()
-            .await
-            .map_err(|e| UsecaseError::FirewallSetupFailed(e.into()))?;
-
-        if show.success() {
-            // 既存ルール → 何もしない / 必要なら更新
+    pub async fn execute(&mut self, config: &OwlConfig) -> Result<(), UsecaseError> {
+        if Self::is_wsl2().unwrap_or(false) {
+            println!("WSL2 environment detected. Skipping firewall setup.");
+            self.presenter.on_success();
             return Ok(());
         }
-
-        let status = Command::new("netsh")
-            .args([
-                "advfirewall",
-                "firewall",
-                "add",
-                "rule",
-                &format!("name={}", RULE_NAME),
-                "dir=in",
-                "action=allow",
-                "protocol=UDP",
-                &format!("localport={}", port),
-            ])
-            .status()
+        self.setup_nftables_firewall(config)
             .await
-            .map_err(|e| UsecaseError::FirewallSetupFailed(e.into()))?;
+            .map_err(UsecaseError::from)
+            .map(|_| self.presenter.on_success())
+    }
 
-        if !status.success() {
-            return Err(UsecaseError::FirewallSetupFailed(anyhow!("netsh error")));
+    /// WSL2判定を Result<bool, std::io::Error> で返す純粋関数化
+    fn is_wsl2() -> Result<bool, std::io::Error> {
+        read_to_string("/proc/version").map(|v| {
+            let v = v.to_lowercase();
+            v.contains("microsoft") && !v.contains("wsl1")
+        })
+    }
+
+    /// Linux用nftablesファイアウォールルールをセットアップする
+    async fn setup_nftables_firewall(&self, config: &OwlConfig) -> Result<(), InitFirewallError> {
+        let nft_script = format!(
+            r#"delete table inet owl
+        table inet owl {{
+            chain input {{
+                type filter hook input priority 0; policy drop;
+                ct state established,related accept;
+                iifname "wg0" accept;
+                tcp dport 22 accept;          # SSH
+                tcp dport {port} accept;      # WireGuard handshake
+                counter;
+                drop;
+            }}
+        }}
+        "#,
+            port = config.interface.listen_port
+        );
+
+        // ── Dump script for debug
+        println!("[nft dump] script to be passed:\n{}", nft_script);
+
+        // ── Spawn
+        let mut child = Command::new("sudo")
+            .arg("nft")
+            .arg("-f")
+            .arg("-")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        // ── Write
+        if let Some(mut stdin) = child.stdin.take() {
+            if let Err(e) = stdin.write_all(nft_script.as_bytes()).await {
+                return Err(InitFirewallError::Write {
+                    source: e,
+                    script: nft_script.clone(),
+                });
+            }
+            // 明示的にクローズ
+            drop(stdin);
         }
+
+        // ── Execution
+        let output = child
+            .wait_with_output()
+            .await
+            .map_err(|e| InitFirewallError::Spawn { source: e })?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+        if !output.status.success() {
+            println!("[nft dump] stdout: {}", stdout);
+            println!("[nft dump] stderr: {}", stderr);
+            return Err(InitFirewallError::Execution {
+                code: output.status.code(),
+                stderr,
+            });
+        }
+        // 成功時も標準出力をダンプ
+        println!("[nft dump] stdout: {}", stdout);
+        println!("[nft dump] stderr: {}", stderr);
+
         Ok(())
     }
 }

@@ -8,5 +8,9 @@ anyhow = { workspace = true }
 toml = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+ipnet = { workspace = true }
 owl-domain = { path = "../owl-domain" }
 owl-infra  = { path = "../owl-infra" }
+tun = "0.7"
+boringtun = { version = "0.6", features = ["device"] }
+base64 = "0.22"

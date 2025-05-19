@@ -16,5 +16,6 @@ role = "general"
 [[peers]]
 public_key           = "peer2pub"
 allowed_ips          = ["fd00:dead:beef::101/128", "10.10.0.101/32"]
+
 [peers.wg_policy]
 role = "admin"

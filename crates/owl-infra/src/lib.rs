@@ -18,6 +18,8 @@ pub struct OwlConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct Interface {
+    #[serde(default)]
+    pub name: Option<String>,
     pub listen_port: u16,
     pub private_key: String, // base64
     #[serde(default)]
