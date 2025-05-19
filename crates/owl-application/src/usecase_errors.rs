@@ -9,3 +9,9 @@ pub enum UsecaseError {
     #[error("ファイアウォール設定に失敗: {0}")]
     FirewallSetupFailed(#[source] anyhow::Error),
 }
+
+impl From<std::io::Error> for UsecaseError {
+    fn from(e: std::io::Error) -> Self {
+        UsecaseError::FirewallSetupFailed(anyhow::Error::from(e))
+    }
+}

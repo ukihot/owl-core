@@ -1,9 +1,11 @@
 //! owl‑core‑bin — エントリポイント
 
 use anyhow::Result;
-use owl_api::build_router;
 use owl_application::AppBuilder;
-use owl_presentation::{ConsoleConfigPresenter, ConsoleFirewallPresenter, ConsoleVpnPresenter};
+use owl_presentation::handlers::build_router;
+use owl_presentation::presenters::{
+    ConsoleConfigPresenter, ConsoleFirewallPresenter, ConsoleVpnPresenter,
+};
 use std::path::Path;
 use tokio::net::TcpListener;
 

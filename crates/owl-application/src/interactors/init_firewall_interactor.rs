@@ -1,5 +1,6 @@
 use crate::UsecaseError;
 use crate::output_ports::init_firewall_output::InitFirewallOutput;
+use anyhow::anyhow;
 use owl_infra::OwlConfig;
 use tokio::process::Command;
 
@@ -9,6 +10,9 @@ where
 {
     presenter: &'a mut P,
 }
+
+#[cfg(target_os = "windows")]
+const RULE_NAME: &str = "OwlWireGuard";
 
 impl<'a, P> InitFirewallInteractor<'a, P>
 where
@@ -82,22 +86,44 @@ where
     // ───────────────────────────────────────────────
     #[cfg(target_os = "windows")]
     async fn setup_windows(&self, conf: &OwlConfig) -> Result<(), UsecaseError> {
-        let rule = "netsh advfirewall firewall add rule name=\"Owl‑WireGuard\" dir=in ".to_string();
-        let rule = format!(
-            "{rule} action=allow protocol=UDP localport={}",
-            conf.interface.listen_port
-        );
+        let port = conf.interface.listen_port;
 
-        let status = Command::new("cmd")
-            .args(["/C", &rule])
+        // 冪等チェック
+        let show = Command::new("netsh")
+            .args([
+                "advfirewall",
+                "firewall",
+                "show",
+                "rule",
+                &format!("name={}", RULE_NAME),
+            ])
+            .status()
+            .await
+            .map_err(|e| UsecaseError::FirewallSetupFailed(e.into()))?;
+
+        if show.success() {
+            // 既存ルール → 何もしない / 必要なら更新
+            return Ok(());
+        }
+
+        let status = Command::new("netsh")
+            .args([
+                "advfirewall",
+                "firewall",
+                "add",
+                "rule",
+                &format!("name={}", RULE_NAME),
+                "dir=in",
+                "action=allow",
+                "protocol=UDP",
+                &format!("localport={}", port),
+            ])
             .status()
             .await
             .map_err(|e| UsecaseError::FirewallSetupFailed(e.into()))?;
 
         if !status.success() {
-            return Err(UsecaseError::FirewallSetupFailed(anyhow::anyhow!(
-                "netsh returned non‑zero"
-            )));
+            return Err(UsecaseError::FirewallSetupFailed(anyhow!("netsh error")));
         }
         Ok(())
     }

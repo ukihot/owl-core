@@ -3,5 +3,8 @@ use anyhow::Result;
 use owl_infra::OwlConfig;
 
 pub trait LoadConfigInput {
-    async fn execute(&mut self) -> Result<OwlConfig, UsecaseError>;
+    fn execute(
+        &mut self,
+        conf: &OwlConfig,
+    ) -> impl std::future::Future<Output = Result<(), UsecaseError>> + Send;
 }

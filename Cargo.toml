@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "crates/owl-core-bin",
-    "crates/owl-api",
     "crates/owl-application",
     "crates/owl-domain",
     "crates/owl-infra",
