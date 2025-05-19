@@ -6,4 +6,7 @@ edition = "2024"
 [dependencies]
 tokio = { workspace = true }
 axum = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
 owl-api = { path = "../owl-api" }
+owl-application = { path = "../owl-application" }
