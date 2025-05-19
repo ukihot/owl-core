@@ -10,3 +10,4 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 owl-api = { path = "../owl-api" }
 owl-application = { path = "../owl-application" }
+owl-presentation = { path = "../owl-presentation" }

@@ -5,6 +5,7 @@ members = [
     "crates/owl-application",
     "crates/owl-domain",
     "crates/owl-infra",
+    "crates/owl-presentation",
 ]
 resolver = "3"
 

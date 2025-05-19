@@ -1,43 +1,41 @@
 use anyhow::Result;
-use owl_infra::OwlConfig;
 use std::path::Path;
-use tokio::fs;
 
-mod app_errors;
-use app_errors::AppError;
+pub mod usecase_errors;
+use usecase_errors::UsecaseError;
 
-/// 起動処理
-pub async fn setup(config_path: &Path) -> Result<()> {
-    // 0) 設定読込
-    let conf = load_config(config_path).await?;
-    println!("✔ config loaded: {:?}", conf);
+pub mod input_ports;
+pub mod interactors;
+pub mod output_ports;
 
-    // 1) ファイアウォール初期化
-    init_firewall(&conf).await?;
-    println!("✔ firewall ready");
+use interactors::init_firewall_interactor::InitFirewallInteractor;
+use interactors::init_vpn_stack_interactor::InitVpnStackInteractor;
+use interactors::load_config_interactor::LoadConfigInteractor;
+use output_ports::init_firewall_output::InitFirewallOutput;
+use output_ports::init_vpn_stack_output::InitVpnStackOutput;
+use output_ports::load_config_output::LoadConfigOutput;
 
-    // 2) VPN スタック (WireGuard + TUN) 準備
-    init_vpn_stack(&conf).await?;
-    println!("✔ VPN stack ready");
-
-    Ok(())
+pub struct AppBuilder<'a> {
+    pub config_presenter: &'a mut (dyn LoadConfigOutput + Send),
+    pub fw_presenter: &'a mut (dyn InitFirewallOutput + Send),
+    pub vpn_presenter: &'a mut (dyn InitVpnStackOutput + Send),
 }
 
-async fn load_config(path: &Path) -> Result<OwlConfig, AppError> {
-    let data = fs::read_to_string(path)
-        .await
-        .map_err(AppError::ConfigReadError)?;
-    let config: OwlConfig = toml::from_str(&data).map_err(AppError::ConfigParseError)?;
-    Ok(config)
-}
+impl<'a> AppBuilder<'a> {
+    pub async fn init(self, config_path: &Path) -> Result<()> {
+        // 0) 設定読込
+        let mut config_interactor =
+            LoadConfigInteractor::new(config_path.to_path_buf(), self.config_presenter);
+        let conf = config_interactor.execute().await?;
 
-/* ------- 以下は当面ダミー実装 ------- */
-async fn init_firewall(_conf: &OwlConfig) -> Result<()> {
-    // nftables / iptables 呼び出し予定
-    Ok(())
-}
+        // 1) ファイアウォール初期化
+        let mut fw_interactor = InitFirewallInteractor::new(self.fw_presenter);
+        fw_interactor.execute(&conf).await?;
 
-async fn init_vpn_stack(_conf: &OwlConfig) -> Result<()> {
-    // wireguard‑rs と tun crate を組み込み予定
-    Ok(())
+        // 2) VPN スタック (WireGuard + TUN) 準備
+        let mut vpn_interactor = InitVpnStackInteractor::new(self.vpn_presenter);
+        vpn_interactor.execute(&conf).await?;
+
+        Ok(())
+    }
 }
