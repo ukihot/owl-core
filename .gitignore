@@ -1,0 +1,37 @@
+# ───────── Rust / Cargo ─────────
+/target/
+**/Cargo.lock
+!Cargo.lock            # ルートの Cargo.lock はバージョン固定のため追跡
+# ↑ サブクレートの Cargo.lock は生成されないが念のため無視
+
+# ───────── IDE / Editor ─────────
+# VS Code
+.vscode/
+# JetBrains (CLion / IntelliJ / RustRover 等)
+.idea/
+# vim / neovim
+*.swp
+# Emacs
+*~
+# macOS Finder
+.DS_Store
+# Windows Explorer
+Thumbs.db
+
+# ───────── Logs / Coverage ─────────
+/logs/
+/coverage/
+/kcov-output/
+
+# ───────── Binaries / Artifacts ─────────
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.rlib
+*.wasm
+
+# ───────── Misc ─────────
+/tmp/
+*.log

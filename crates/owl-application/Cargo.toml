@@ -1,0 +1,8 @@
+[package]
+name = "owl-application"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+owl-domain = { path = "../owl-domain" }
+owl-infra  = { path = "../owl-infra" }
