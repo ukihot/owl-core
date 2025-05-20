@@ -37,5 +37,22 @@ pub enum UsecaseError {
 
     #[error("秘密鍵のデコードに失敗: {0}")]
     KeyDecodeError(#[source] base64::DecodeError),
-    // ほかのユースケースエラー...
+
+    #[error("WireGuardインターフェース名が未設定です")]
+    InterfaceNameNotSet,
+
+    #[error("WireGuardデバイス初期化失敗: {0}")]
+    WireguardInitError(#[source] std::io::Error),
+
+    #[error("UAPIソケットへの接続失敗: {0}")]
+    UapiConnectError(#[source] std::io::Error),
+
+    #[error("UAPIソケットへの書き込み失敗: {0}")]
+    UapiWriteError(#[source] std::io::Error),
+
+    #[error("初期化されていません")]
+    NotInitialized,
+
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }

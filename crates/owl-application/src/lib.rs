@@ -1,4 +1,3 @@
-use anyhow::Result;
 use std::path::Path;
 
 pub mod usecase_errors;
@@ -15,27 +14,60 @@ use output_ports::init_firewall_output::InitFirewallOutput;
 use output_ports::init_vpn_stack_output::InitVpnStackOutput;
 use output_ports::load_config_output::LoadConfigOutput;
 
-pub struct AppBuilder<'a> {
+pub struct OwlApplication<'a> {
     pub config_presenter: &'a mut (dyn LoadConfigOutput + Send),
     pub fw_presenter: &'a mut (dyn InitFirewallOutput + Send),
     pub vpn_presenter: &'a mut (dyn InitVpnStackOutput + Send),
+    tun: Option<tun::Device>,
+    device: Option<boringtun::device::Device>,
 }
 
-impl<'a> AppBuilder<'a> {
-    pub async fn init(self, config_path: &Path) -> Result<()> {
-        // 0) 設定読込
-        let mut config_interactor =
-            LoadConfigInteractor::new(config_path.to_path_buf(), self.config_presenter);
-        let conf = config_interactor.execute().await?;
+impl<'a> OwlApplication<'a> {
+    pub fn new(
+        config_presenter: &'a mut (dyn LoadConfigOutput + Send),
+        fw_presenter: &'a mut (dyn InitFirewallOutput + Send),
+        vpn_presenter: &'a mut (dyn InitVpnStackOutput + Send),
+    ) -> Self {
+        Self {
+            config_presenter,
+            fw_presenter,
+            vpn_presenter,
+            tun: None,
+            device: None,
+        }
+    }
 
-        // 1) ファイアウォール初期化
-        let mut fw_interactor = InitFirewallInteractor::new(self.fw_presenter);
-        fw_interactor.execute(&conf).await?;
+    pub async fn init(&mut self, config_path: &Path) -> Result<&mut Self, UsecaseError> {
+        // (1) 設定読込
+        let conf = LoadConfigInteractor::new(config_path.to_path_buf(), self.config_presenter)
+            .execute()
+            .await?;
+        // (2) FW 初期化
+        InitFirewallInteractor::new(self.fw_presenter)
+            .execute(&conf)
+            .await?;
+        // (3) VPN 準備
+        let (tun, device) = InitVpnStackInteractor::new(self.vpn_presenter)
+            .execute(&conf)
+            .await?;
+        self.tun = Some(tun);
+        self.device = Some(device);
 
-        // 2) VPN スタック (WireGuard + TUN) 準備
-        let mut vpn_interactor = InitVpnStackInteractor::new(self.vpn_presenter);
-        vpn_interactor.execute(&conf).await?;
+        Ok(self)
+    }
 
+    /// VPNランタイムをspawnする
+    pub async fn spawn_vpn_runtime(&mut self) -> Result<(), UsecaseError> {
+        // TUN, WGデバイスを取得(self.tun, self.device)
+
+        // UDPソケットを仮で作成
+
+        // 1. Create epoll
+
+        // 2. Register TUN & UDP (devices implement AsFd)
+
+        // 3. Event loop
+        
         Ok(())
     }
 }

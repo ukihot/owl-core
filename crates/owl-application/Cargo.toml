@@ -9,6 +9,7 @@ toml = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 ipnet = { workspace = true }
+nix = { version = "0.30", features = ["event"] }
 owl-domain = { path = "../owl-domain" }
 owl-infra  = { path = "../owl-infra" }
 tun = "0.7"
